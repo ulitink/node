@@ -1,0 +1,43 @@
+// Copyright 2019 the V8 project authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+extern class JSFinalizationGroup extends JSObject {
+  native_context: NativeContext;
+  cleanup: Object;
+  active_cells: Undefined|WeakCell;
+  cleared_cells: Undefined|WeakCell;
+  key_map: Object;
+  next: Undefined|JSFinalizationGroup;
+  flags: Smi;
+}
+
+@generateCppClass
+extern class JSFinalizationGroupCleanupIterator extends JSObject {
+  finalization_group: JSFinalizationGroup;
+}
+
+@generateCppClass
+extern class WeakCell extends HeapObject {
+  finalization_group: Undefined|JSFinalizationGroup;
+  target: Undefined|JSReceiver;
+  holdings: Object;
+
+  // For storing doubly linked lists of WeakCells in JSFinalizationGroup's
+  // "active_cells" and "cleared_cells" lists.
+  prev: Undefined|WeakCell;
+  next: Undefined|WeakCell;
+
+  // For storing doubly linked lists of WeakCells per unregister token in
+  // JSFinalizationGroup's token-keyed hashmap. WeakCell also needs to know its
+  // token, so that we can remove it from the key_map when we remove the last
+  // WeakCell associated with it.
+  unregister_token: Object;
+  key_list_prev: Undefined|WeakCell;
+  key_list_next: Undefined|WeakCell;
+}
+
+@generateCppClass
+extern class JSWeakRef extends JSObject {
+  target: Undefined|JSReceiver;
+}

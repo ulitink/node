@@ -38,6 +38,13 @@ struct TorqueMessage {
 
 DECLARE_CONTEXTUAL_VARIABLE(TorqueMessages, std::vector<TorqueMessage>);
 
+template <class... Args>
+std::string ToString(Args&&... args) {
+  std::stringstream stream;
+  USE((stream << std::forward<Args>(args))...);
+  return stream.str();
+}
+
 class V8_EXPORT_PRIVATE MessageBuilder {
  public:
   MessageBuilder(const std::string& message, TorqueMessage::Kind kind);
@@ -59,6 +66,7 @@ class V8_EXPORT_PRIVATE MessageBuilder {
   void Report() const;
 
   TorqueMessage message_;
+  std::vector<TorqueMessage> extra_messages_;
 };
 
 // Used for throwing exceptions. Retrieve TorqueMessage from the contextual
@@ -67,9 +75,7 @@ struct TorqueAbortCompilation {};
 
 template <class... Args>
 static MessageBuilder Message(TorqueMessage::Kind kind, Args&&... args) {
-  std::stringstream stream;
-  USE((stream << std::forward<Args>(args))...);
-  return MessageBuilder(stream.str(), kind);
+  return MessageBuilder(ToString(std::forward<Args>(args)...), kind);
 }
 
 template <class... Args>
@@ -112,47 +118,56 @@ class Deduplicator {
   std::unordered_set<T, base::hash<T>> storage_;
 };
 
+template <class T>
+T& DereferenceIfPointer(T* x) {
+  return *x;
+}
+template <class T>
+T&& DereferenceIfPointer(T&& x) {
+  return std::forward<T>(x);
+}
+
+template <class T, class L>
+struct ListPrintAdaptor {
+  const T& list;
+  const std::string& separator;
+  L transformer;
+
+  friend std::ostream& operator<<(std::ostream& os, const ListPrintAdaptor& l) {
+    bool first = true;
+    for (auto& e : l.list) {
+      if (first) {
+        first = false;
+      } else {
+        os << l.separator;
+      }
+      os << DereferenceIfPointer(l.transformer(e));
+    }
+    return os;
+  }
+};
+
+template <class T>
+auto PrintList(const T& list, const std::string& separator = ", ") {
+  using ElementType = decltype(*list.begin());
+  auto id = [](ElementType el) { return el; };
+  return ListPrintAdaptor<T, decltype(id)>{list, separator, id};
+}
+
+template <class T, class L>
+auto PrintList(const T& list, const std::string& separator, L&& transformer) {
+  return ListPrintAdaptor<T, L&&>{list, separator,
+                                  std::forward<L>(transformer)};
+}
+
 template <class C, class T>
-void PrintCommaSeparatedList(std::ostream& os, const T& list, C transform) {
-  bool first = true;
-  for (auto& e : list) {
-    if (first) {
-      first = false;
-    } else {
-      os << ", ";
-    }
-    os << transform(e);
-  }
+void PrintCommaSeparatedList(std::ostream& os, const T& list, C&& transform) {
+  os << PrintList(list, ", ", std::forward<C>(transform));
 }
 
-template <class T,
-          typename std::enable_if<
-              std::is_pointer<typename T::value_type>::value, int>::type = 0>
+template <class T>
 void PrintCommaSeparatedList(std::ostream& os, const T& list) {
-  bool first = true;
-  for (auto& e : list) {
-    if (first) {
-      first = false;
-    } else {
-      os << ", ";
-    }
-    os << *e;
-  }
-}
-
-template <class T,
-          typename std::enable_if<
-              !std::is_pointer<typename T::value_type>::value, int>::type = 0>
-void PrintCommaSeparatedList(std::ostream& os, const T& list) {
-  bool first = true;
-  for (auto& e : list) {
-    if (first) {
-      first = false;
-    } else {
-      os << ", ";
-    }
-    os << e;
-  }
+  os << PrintList(list, ", ");
 }
 
 struct BottomOffset {
@@ -298,18 +313,6 @@ inline std::ostream& operator<<(std::ostream& os, const Stack<T>& t) {
   os << "}";
   return os;
 }
-class ToString {
- public:
-  template <class T>
-  ToString& operator<<(T&& x) {
-    s_ << std::forward<T>(x);
-    return *this;
-  }
-  operator std::string() { return s_.str(); }
-
- private:
-  std::stringstream s_;
-};
 
 static const char* const kBaseNamespaceName = "base";
 static const char* const kTestNamespaceName = "test";
